@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Scene Cut Detector</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1>✨ Scene Cut Detector ✨</h1>
+  <input type="file" id="videoUpload" accept="video/*" />
+  <button id="processBtn">▶️ Detect Scenes</button>
+
+  <div id="sceneList"></div>
+
+  <div id="downloadOptions" style="display: none; margin-top: 20px;">
+    <button id="downloadZipBtn">📦 Download All Scenes (.zip)</button>
+    <button id="downloadTimecodesBtn">🕒 Export Timecodes (.txt)</button>
+  </div>
+
+  <script>
+    const BACKEND_URL = "https://scene-cut-api.onrender.com"; // Replace with your Render backend URL
+
+    let currentScenes = [];
+
+    document.getElementById("processBtn").addEventListener("click", async () => {
+      const file = document.getElementById("videoUpload").files[0];
+      if (!file) return alert("Please upload a video.");
+
+      const formData = new FormData();
+      formData.append("video", file);
+
+      const res = await fetch(`${BACKEND_URL}/detect`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const scenes = await res.json();
+      currentScenes = scenes;
+      const list = document.getElementById("sceneList");
+      list.innerHTML = "<h3>Detected Scenes:</h3>";
+
+      scenes.forEach((scene, i) => {
+        const div = document.createElement("div");
+        div.className = "scene";
+        div.innerHTML = `
+          <label>
+            <input type="checkbox" data-index="${i}" checked>
+            Scene ${i + 1}: ${scene.start}s → ${scene.end}s
+          </label>
+          <button onclick="downloadScene(${i})">📁 Download This Scene</button>
+        `;
+        list.appendChild(div);
+      });
+
+      document.getElementById("downloadOptions").style.display = "block";
+    });
+
+    async function downloadScene(index) {
+      const res = await fetch(`${BACKEND_URL}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ indices: [index] })
+      });
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `scene_${index + 1}.zip`;
+      a.click();
+    }
+
+    document.getElementById("downloadZipBtn").addEventListener("click", async () => {
+      const checked = [...document.querySelectorAll('input[type="checkbox"]:checked')].map(cb =>
+        parseInt(cb.dataset.index)
+      );
+
+      const res = await fetch(`${BACKEND_URL}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ indices: checked })
+      });
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "scenes.zip";
+      a.click();
+    });
+
+    document.getElementById("downloadTimecodesBtn").addEventListener("click", () => {
+      const lines = currentScenes.map((scene, i) => `Scene ${i + 1}: ${scene.start}s - ${scene.end}s`).join("\n");
+      const blob = new Blob([lines], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "timecodes.txt";
+      a.click();
+    });
+  </script>
+</body>
+</html>

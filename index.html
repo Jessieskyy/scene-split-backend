@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Scene Cut Detector</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <h1>✨ Scene Cut Detector ✨</h1>
@@ -18,7 +18,7 @@
   </div>
 
   <script>
-    const BACKEND_URL = "https://scene-split-backend.onrender.com"; // Replace with your Render backend URL
+    const BACKEND_URL = "https://scene-split-backend.onrender.com"; // Your backend URL
 
     let currentScenes = [];
 
@@ -29,68 +29,91 @@
       const formData = new FormData();
       formData.append("video", file);
 
-      const res = await fetch(`${BACKEND_URL}/detect`, {
-        method: "POST",
-        body: formData,
-      });
+      try {
+        const res = await fetch(`${BACKEND_URL}/detect`, {
+          method: "POST",
+          body: formData,
+        });
 
-      const scenes = await res.json();
-      currentScenes = scenes;
-      const list = document.getElementById("sceneList");
-      list.innerHTML = "<h3>Detected Scenes:</h3>";
+        if (!res.ok) throw new Error("Failed to detect scenes.");
 
-      scenes.forEach((scene, i) => {
-        const div = document.createElement("div");
-        div.className = "scene";
-        div.innerHTML = `
-          <label>
-            <input type="checkbox" data-index="${i}" checked>
-            Scene ${i + 1}: ${scene.start}s → ${scene.end}s
-          </label>
-          <button onclick="downloadScene(${i})">📁 Download This Scene</button>
-        `;
-        list.appendChild(div);
-      });
+        const scenes = await res.json();
+        currentScenes = scenes;
+        const list = document.getElementById("sceneList");
+        list.innerHTML = "<h3>Detected Scenes:</h3>";
 
-      document.getElementById("downloadOptions").style.display = "block";
+        scenes.forEach((scene, i) => {
+          const div = document.createElement("div");
+          div.className = "scene";
+          div.innerHTML = `
+            <label>
+              <input type="checkbox" data-index="${i}" checked />
+              Scene ${i + 1}: ${scene.start}s → ${scene.end}s
+            </label>
+            <button onclick="downloadScene(${i})">📁 Download This Scene</button>
+          `;
+          list.appendChild(div);
+        });
+
+        document.getElementById("downloadOptions").style.display = "block";
+      } catch (error) {
+        alert(error.message);
+      }
     });
 
     async function downloadScene(index) {
-      const res = await fetch(`${BACKEND_URL}/export`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ indices: [index] })
-      });
+      try {
+        const res = await fetch(`${BACKEND_URL}/export`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ indices: [index] }),
+        });
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `scene_${index + 1}.zip`;
-      a.click();
+        if (!res.ok) throw new Error("Failed to download scene.");
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `scene_${index + 1}.zip`;
+        a.click();
+      } catch (error) {
+        alert(error.message);
+      }
     }
 
     document.getElementById("downloadZipBtn").addEventListener("click", async () => {
-      const checked = [...document.querySelectorAll('input[type="checkbox"]:checked')].map(cb =>
-        parseInt(cb.dataset.index)
+      const checked = [...document.querySelectorAll('input[type="checkbox"]:checked')].map(
+        (cb) => parseInt(cb.dataset.index)
       );
 
-      const res = await fetch(`${BACKEND_URL}/export`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ indices: checked })
-      });
+      if (checked.length === 0) return alert("Select at least one scene to download.");
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "scenes.zip";
-      a.click();
+      try {
+        const res = await fetch(`${BACKEND_URL}/export`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ indices: checked }),
+        });
+
+        if (!res.ok) throw new Error("Failed to download zip.");
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "scenes.zip";
+        a.click();
+      } catch (error) {
+        alert(error.message);
+      }
     });
 
     document.getElementById("downloadTimecodesBtn").addEventListener("click", () => {
-      const lines = currentScenes.map((scene, i) => `Scene ${i + 1}: ${scene.start}s - ${scene.end}s`).join("\n");
+      if (currentScenes.length === 0) return alert("No scenes detected yet.");
+      const lines = currentScenes
+        .map((scene, i) => `Scene ${i + 1}: ${scene.start}s - ${scene.end}s`)
+        .join("\n");
       const blob = new Blob([lines], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

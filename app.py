@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
 import os
 import tempfile
 import zipfile
@@ -8,12 +9,12 @@ from scenedetect.detectors import ContentDetector
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+logging.basicConfig(level=logging.INFO)
 
 detected_scenes = []
 video_path = None
-
-# Enable Flask's built-in logging to console
-logging.basicConfig(level=logging.INFO)
 
 @app.route("/")
 def index():
@@ -22,9 +23,15 @@ def index():
 @app.route("/detect", methods=["POST"])
 def detect():
     global detected_scenes, video_path
-    file = request.files.get('video')
-    if not file:
+
+    if 'video' not in request.files:
+        app.logger.error("No video part in request.files")
         return jsonify({"error": "No video uploaded"}), 400
+
+    file = request.files['video']
+    if file.filename == '':
+        app.logger.error("Empty filename uploaded")
+        return jsonify({"error": "No video selected"}), 400
 
     temp_dir = tempfile.mkdtemp()
     video_path = os.path.join(temp_dir, file.filename)
@@ -54,12 +61,10 @@ def detect():
 @app.route("/export", methods=["POST"])
 def export():
     global detected_scenes, video_path
-    if not detected_scenes or not video_path:
-        return jsonify({"error": "No detected scenes or video available."}), 400
 
-    indices = request.json.get('indices', [])
-    if not indices:
-        return jsonify({"error": "No scene indices provided."}), 400
+    indices = request.json.get('indices')
+    if not indices or not isinstance(indices, list):
+        return jsonify({"error": "Invalid or missing 'indices'"}), 400
 
     zip_path = os.path.join(tempfile.gettempdir(), "scenes_export.zip")
     with zipfile.ZipFile(zip_path, 'w') as zipf:
@@ -68,12 +73,10 @@ def export():
                 continue
             start, end = detected_scenes[i]
             clip_path = os.path.join(tempfile.gettempdir(), f"scene_{i+1}.mp4")
-            app.logger.info(f"Exporting scene {i+1}: {start}s to {end}s")
             ffmpeg_extract_subclip(video_path, start, end, targetname=clip_path)
             zipf.write(clip_path, arcname=f"scene_{i+1}.mp4")
 
     return send_file(zip_path, as_attachment=True)
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)

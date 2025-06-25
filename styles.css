@@ -1,0 +1,71 @@
+body {
+  background: #ffeaf4;
+  font-family: 'Quicksand', 'Poppins', sans-serif;
+  color: #5e4b56;
+  margin: 0;
+  padding: 20px;
+  text-align: center;
+}
+
+h1 {
+  font-size: 2.4rem;
+  color: #d63384;
+  margin-bottom: 25px;
+  text-shadow: 1px 1px 2px #fbd1dc;
+}
+
+input[type="file"] {
+  padding: 10px;
+  border-radius: 8px;
+  border: 2px dashed #fbb1c1;
+  background-color: #fff0f6;
+  color: #d63384;
+  margin-bottom: 20px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+button {
+  padding: 10px 20px;
+  margin: 10px 5px;
+  font-size: 1rem;
+  font-weight: bold;
+  border-radius: 8px;
+  border: none;
+  background-color: #fbb1c1;
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(249, 168, 212, 0.3);
+  transition: background 0.3s ease;
+}
+
+button:hover {
+  background-color: #ff80aa;
+}
+
+#sceneList {
+  margin-top: 20px;
+  text-align: left;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.scene {
+  background-color: #fff5f9;
+  border: 1px solid #fbd1dc;
+  border-radius: 10px;
+  padding: 12px 15px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(255, 192, 203, 0.2);
+}
+
+label {
+  font-size: 1rem;
+  color: #5e4b56;
+}
+
+input[type="checkbox"] {
+  margin-right: 8px;
+  accent-color: #ff66a6;
+}

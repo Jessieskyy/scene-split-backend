@@ -5,94 +5,125 @@
   <title>Scene Cut Detector</title>
   <link rel="stylesheet" href="styles.css">
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 2rem;
-      background: #f4f4f4;
+    #progressWrapper {
+      margin-top: 20px;
+      width: 100%;
+      background: #ddd;
+      border-radius: 10px;
+      overflow: hidden;
     }
-    h1 {
+
+    #progressBar {
+      height: 20px;
+      width: 0%;
+      background: #4caf50;
       text-align: center;
-    }
-    #loadingOverlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: rgba(0, 0, 0, 0.7);
       color: white;
-      font-size: 2rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 9999;
+      transition: width 0.2s;
     }
+
     .scene {
-      background: white;
-      margin: 0.5rem 0;
-      padding: 1rem;
-      border-radius: 8px;
-      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+      margin-bottom: 15px;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 10px;
     }
-    button {
-      margin: 0.5rem 0.25rem;
+
+    .timeline {
+      display: flex;
+      height: 30px;
+      margin: 20px 0;
+      border: 1px solid #aaa;
+      background: #f0f0f0;
+      overflow: hidden;
+    }
+
+    .scene-range {
+      height: 100%;
+      background-color: #7e57c2;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
+  <h1>✨ Scene Cut Detector ✨</h1>
 
-<h1>✨ Scene Cut Detector ✨</h1>
-<input type="file" id="videoUpload" accept="video/*" />
-<button id="processBtn">▶️ Detect Scenes</button>
+  <input type="file" id="videoUpload" accept="video/*" />
+  <button id="processBtn">▶️ Detect Scenes</button>
 
-<div id="loadingOverlay">⏳ Processing video, please wait...</div>
+  <div id="progressWrapper" style="display:none;">
+    <div id="progressBar">0%</div>
+    <p id="progressText"></p>
+  </div>
 
-<div id="sceneList"></div>
+  <div id="timelineBar" class="timeline"></div>
 
-<div id="downloadOptions" style="display: none;">
-  <button id="downloadZipBtn">📦 Download All Selected Scenes (.zip)</button>
-  <button id="downloadTimecodesBtn">🕒 Export Timecodes (.txt)</button>
-</div>
+  <div id="sceneList"></div>
 
-<script>
-  const BACKEND_URL = "https://scene-split-backend.onrender.com";
-  let currentScenes = [];
+  <div id="downloadOptions" style="display: none; margin-top: 20px;">
+    <button id="downloadZipBtn">📦 Download All Scenes (.zip)</button>
+    <button id="downloadTimecodesBtn">🕒 Export Timecodes (.txt)</button>
+  </div>
 
-  const showLoading = (text = "Processing...") => {
-    const overlay = document.getElementById("loadingOverlay");
-    overlay.innerText = text;
-    overlay.style.display = "flex";
-  };
+  <script>
+    const BACKEND_URL = "https://scene-split-backend.onrender.com";
+    let currentScenes = [];
 
-  const hideLoading = () => {
-    document.getElementById("loadingOverlay").style.display = "none";
-  };
+    document.getElementById("processBtn").addEventListener("click", async () => {
+      const file = document.getElementById("videoUpload").files[0];
+      if (!file) return alert("Please upload a video.");
 
-  document.getElementById("processBtn").addEventListener("click", async () => {
-    const file = document.getElementById("videoUpload").files[0];
-    if (!file) return alert("Please upload a video.");
+      const estimatedDuration = file.size / (1024 * 1024); // rough MB
+      const estimatedTime = Math.ceil(estimatedDuration * 1.5); // 1.5s per MB approx
 
-    showLoading("⏳ Uploading and detecting scenes...");
+      // UI
+      document.getElementById("sceneList").innerHTML = "";
+      document.getElementById("downloadOptions").style.display = "none";
+      document.getElementById("timelineBar").innerHTML = "";
+      document.getElementById("progressWrapper").style.display = "block";
+      updateProgress(0, estimatedTime);
 
-    const formData = new FormData();
-    formData.append("video", file);
+      const formData = new FormData();
+      formData.append("video", file);
 
-    try {
+      // Simulate progress while waiting for real scenes
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 2;
+        if (progress >= 90) clearInterval(interval);
+        updateProgress(progress, estimatedTime);
+      }, 1000);
+
       const res = await fetch(`${BACKEND_URL}/detect`, {
         method: "POST",
-        body: formData
+        body: formData,
       });
 
+      clearInterval(interval);
+      updateProgress(100, 0);
+
       const scenes = await res.json();
-      hideLoading();
-
-      if (!scenes || scenes.length === 0) {
-        alert("No scenes detected.");
-        return;
-      }
-
       currentScenes = scenes;
+      renderScenes(scenes);
+      document.getElementById("downloadOptions").style.display = "block";
+    });
+
+    function updateProgress(percent, timeLeft) {
+      const bar = document.getElementById("progressBar");
+      const text = document.getElementById("progressText");
+      bar.style.width = `${percent}%`;
+      bar.textContent = `${percent}%`;
+      if (percent < 100 && timeLeft > 0) {
+        text.textContent = `Estimated time remaining: ${timeLeft} seconds`;
+      } else {
+        text.textContent = percent === 100 ? "✅ Done!" : "";
+      }
+    }
+
+    function renderScenes(scenes) {
       const list = document.getElementById("sceneList");
-      list.innerHTML = "<h3>🎬 Detected Scenes:</h3>";
+      const timeline = document.getElementById("timelineBar");
+      const total = scenes[scenes.length - 1].end;
+      list.innerHTML = "<h3>Detected Scenes:</h3>";
 
       scenes.forEach((scene, i) => {
         const div = document.createElement("div");
@@ -101,66 +132,64 @@
           <label>
             <input type="checkbox" data-index="${i}" checked>
             Scene ${i + 1}: ${scene.start}s → ${scene.end}s
-          </label>
-          <button onclick="downloadScene(${i})">📥 Download This Scene</button>
+          </label><br>
+          <img src="${BACKEND_URL}${scene.thumb}" style="width: 200px; height: auto; display: block; margin-top: 10px;">
+          <button onclick="downloadScene(${i})">📁 Download This Scene</button>
         `;
         list.appendChild(div);
+
+        // Timeline segment
+        const widthPercent = ((scene.end - scene.start) / total) * 100;
+        const segment = document.createElement("div");
+        segment.className = "scene-range";
+        segment.style.width = `${widthPercent}%`;
+        segment.title = `Scene ${i + 1}`;
+        segment.onclick = () => document.querySelector(`[data-index="${i}"]`).scrollIntoView({ behavior: 'smooth' });
+        timeline.appendChild(segment);
       });
-
-      document.getElementById("downloadOptions").style.display = "block";
-
-    } catch (err) {
-      hideLoading();
-      console.error("Error:", err);
-      alert("Failed to detect scenes.");
     }
-  });
 
-  async function downloadScene(index) {
-    const res = await fetch(`${BACKEND_URL}/export`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ indices: [index] })
+    async function downloadScene(index) {
+      const res = await fetch(`${BACKEND_URL}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ indices: [index] })
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `scene_${index + 1}.zip`;
+      a.click();
+    }
+
+    document.getElementById("downloadZipBtn").addEventListener("click", async () => {
+      const checked = [...document.querySelectorAll('input[type="checkbox"]:checked')].map(cb =>
+        parseInt(cb.dataset.index)
+      );
+      if (!checked.length) return alert("❗ No scenes selected.");
+      const res = await fetch(`${BACKEND_URL}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ indices: checked })
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "scenes.zip";
+      a.click();
     });
 
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `scene_${index + 1}.zip`;
-    a.click();
-  }
-
-  document.getElementById("downloadZipBtn").addEventListener("click", async () => {
-    const checked = [...document.querySelectorAll('input[type="checkbox"]:checked')]
-      .map(cb => parseInt(cb.dataset.index));
-
-    if (checked.length === 0) return alert("No scenes selected.");
-
-    const res = await fetch(`${BACKEND_URL}/export`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ indices: checked })
+    document.getElementById("downloadTimecodesBtn").addEventListener("click", () => {
+      const lines = currentScenes.map((scene, i) => `Scene ${i + 1}: ${scene.start}s - ${scene.end}s`).join("\n");
+      const blob = new Blob([lines], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "timecodes.txt";
+      a.click();
     });
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "scenes.zip";
-    a.click();
-  });
-
-  document.getElementById("downloadTimecodesBtn").addEventListener("click", () => {
-    if (!currentScenes.length) return alert("No scenes detected.");
-    const lines = currentScenes.map((scene, i) => `Scene ${i + 1}: ${scene.start}s - ${scene.end}s`).join("\n");
-    const blob = new Blob([lines], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "timecodes.txt";
-    a.click();
-  });
-</script>
+  </script>
 </body>
 </html>

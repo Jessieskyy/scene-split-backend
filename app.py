@@ -8,6 +8,10 @@ app = Flask(__name__)
 detected_scenes = []
 video_path = None
 
+@app.route("/")
+def home():
+    return "Scene Split Backend is running!"
+
 @app.route("/detect", methods=["POST"])
 def detect():
     global detected_scenes, video_path

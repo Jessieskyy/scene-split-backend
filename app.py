@@ -1,126 +1,131 @@
 import os
 import uuid
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from scenedetect import VideoManager, SceneManager
 from scenedetect.detectors import ContentDetector
 from moviepy.editor import VideoFileClip
 from zipfile import ZipFile
 
-UPLOAD_DIR = "uploads"
-SCENE_DIR = "scenes"
-THUMB_DIR = "thumbnails"
+UPLOAD_FOLDER = "uploads"
+THUMBNAIL_FOLDER = "thumbnails"
+SCENE_FOLDER = "scenes"
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(SCENE_DIR, exist_ok=True)
-os.makedirs(THUMB_DIR, exist_ok=True)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(THUMBNAIL_FOLDER, exist_ok=True)
+os.makedirs(SCENE_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 CORS(app)
 
 
-def detect_scenes(video_path):
-    print("🧠 Starting scene detection...")
-
+def detect_scenes(video_path, threshold=30.0):
     video_manager = VideoManager([video_path])
     scene_manager = SceneManager()
-    scene_manager.add_detector(ContentDetector(threshold=30.0))
+    scene_manager.add_detector(ContentDetector(threshold=threshold))
 
     video_manager.set_downscale_factor()
     video_manager.start()
-
     scene_manager.detect_scenes(frame_source=video_manager)
     scene_list = scene_manager.get_scene_list()
 
-    fps = video_manager.get_framerate()
-    scenes = [(int(start.get_seconds()), int(end.get_seconds())) for start, end in scene_list]
+    scenes = []
+    for start, end in scene_list:
+        start_sec = start.get_seconds()
+        end_sec = end.get_seconds()
+        scenes.append({
+            "start": start_sec,
+            "end": end_sec
+        })
+    return scenes
 
-    print(f"✅ Detected {len(scenes)} scenes.")
-    return scenes, fps
+
+def generate_thumbnail(video_path, time_in_seconds, scene_id):
+    clip = VideoFileClip(video_path)
+    # Extract frame and save as JPG thumbnail
+    clip.save_frame(os.path.join(THUMBNAIL_FOLDER, f"{scene_id}.jpg"), t=time_in_seconds)
+    clip.close()
+    return f"/thumbnail/{scene_id}.jpg"
 
 
 def export_scene_clip(video_path, start, end, index):
-    output_path = os.path.join(SCENE_DIR, f"scene_{index + 1}.mp4")
+    output_path = os.path.join(SCENE_FOLDER, f"scene_{index + 1}.mp4")
     clip = VideoFileClip(video_path).subclip(start, end)
     clip.write_videofile(output_path, codec="libx264", audio_codec="aac", verbose=False, logger=None)
+    clip.close()
     return output_path
 
 
-def generate_thumbnail(video_path, time, index):
-    output_path = os.path.join(THUMB_DIR, f"thumb_{index + 1}.png")
-    clip = VideoFileClip(video_path)
-    frame = clip.get_frame(time)
-    clip.save_frame(output_path, t=time)
-    return output_path
+@app.route("/upload", methods=["POST"])
+def upload_video():
+    if "video" not in request.files:
+        return jsonify({"error": "No video file provided"}), 400
 
-
-@app.route("/", methods=["GET"])
-def index():
-    return "Scene Split Backend is running!"
-
-
-@app.route("/detect", methods=["POST"])
-def detect():
-    file = request.files.get("video")
-    if not file:
-        return "No file provided", 400
-
-    unique_id = str(uuid.uuid4())
-    filename = f"{unique_id}_{file.filename}"
-    video_path = os.path.join(UPLOAD_DIR, filename)
+    file = request.files["video"]
+    filename = f"{uuid.uuid4().hex}.mp4"
+    video_path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(video_path)
 
-    print(f"🎥 Uploaded: {filename}")
-    scenes, fps = detect_scenes(video_path)
+    # Detect scenes
+    scenes = detect_scenes(video_path)
 
-    # Estimate total time (approx. 2.5s per scene segment)
-    time_estimate = len(scenes) * 2.5
-    print(f"⏱️ Estimated total export time: ~{int(time_estimate)} seconds")
-
+    # Generate thumbnails for each scene start + small offset
     scene_data = []
-    for i, (start, end) in enumerate(scenes):
-        thumb_path = generate_thumbnail(video_path, start + 0.5, i)
+    for i, scene in enumerate(scenes):
+        start = scene["start"]
+        scene_id = f"{filename}_{i}"
+        thumb_url = generate_thumbnail(video_path, start + 0.1, scene_id)
         scene_data.append({
-            "index": i,
+            "scene": i,
             "start": start,
-            "end": end,
-            "thumbnail": f"/thumbnail/{os.path.basename(thumb_path)}"
+            "end": scene["end"],
+            "thumbnail_url": thumb_url
         })
 
-    # Store metadata for export
-    request.environ["scene_data"] = (video_path, scenes)
+    return jsonify({
+        "video": filename,
+        "scenes": scene_data
+    })
 
-    return jsonify(scene_data)
+
+@app.route("/thumbnail/<thumb_filename>")
+def serve_thumbnail(thumb_filename):
+    thumb_path = os.path.join(THUMBNAIL_FOLDER, thumb_filename)
+    if os.path.exists(thumb_path):
+        return send_file(thumb_path, mimetype="image/jpeg")
+    else:
+        return jsonify({"error": "Thumbnail not found"}), 404
 
 
 @app.route("/export", methods=["POST"])
-def export():
+def export_scenes():
     data = request.json
     indices = data.get("indices", [])
-    file = request.files.get("video")
-    video_path = request.args.get("video_path")  # Optional future use
+    video_filename = data.get("video")
 
-    # Temporary hack: use last uploaded video (could be refactored to track per-session)
-    last_video = sorted(os.listdir(UPLOAD_DIR))[-1]
-    video_path = os.path.join(UPLOAD_DIR, last_video)
+    if not video_filename:
+        return jsonify({"error": "Video filename not provided"}), 400
 
-    scenes, _ = detect_scenes(video_path)
+    video_path = os.path.join(UPLOAD_FOLDER, video_filename)
+    if not os.path.exists(video_path):
+        return jsonify({"error": "Video file not found"}), 404
 
-    selected_scenes = [scenes[i] for i in indices]
-    zip_path = os.path.join(SCENE_DIR, "scenes.zip")
+    scenes = detect_scenes(video_path)
+    selected_scenes = [scenes[i] for i in indices if i < len(scenes)]
 
+    zip_path = os.path.join(SCENE_FOLDER, "scenes.zip")
     with ZipFile(zip_path, "w") as zipf:
-        for i, (start, end) in enumerate(selected_scenes):
-            output_path = export_scene_clip(video_path, start, end, i)
+        for i, scene in enumerate(selected_scenes):
+            output_path = export_scene_clip(video_path, scene["start"], scene["end"], i)
             zipf.write(output_path, arcname=os.path.basename(output_path))
 
     return send_file(zip_path, as_attachment=True)
 
 
-@app.route("/thumbnail/<filename>")
-def get_thumbnail(filename):
-    return send_file(os.path.join(THUMB_DIR, filename))
+@app.route("/status")
+def status():
+    return jsonify({"status": "Server is up and running!"})
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=5000)
